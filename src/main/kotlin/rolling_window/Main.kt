@@ -10,12 +10,19 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ticker
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
+import java.util.logging.Level
+import java.util.logging.Logger
+
+private val logger: Logger = Logger.getLogger("rolling_window")
 
 
 fun main(args: Array<String>) = runBlocking {
     val instrument = args.getOrNull(0) ?: "BTC-PERPETUAL"
     val windowSec = args.getOrNull(1)?.toIntOrNull() ?: 60
-    val json = Json { ignoreUnknownKeys = true }
+    val json = Json {
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+    }
 
     val client = HttpClient(CIO) {
         install(WebSockets)
@@ -39,22 +46,27 @@ fun main(args: Array<String>) = runBlocking {
     }
 
     client.webSocket("wss://test.deribit.com/ws/api/v2") {
-        val sub = buildJsonObject {
-            put("jsonrpc", "2.0"); put("id", 42)
-            put("method", "public/subscribe")
-            putJsonObject("params") {
-                putJsonArray("channels") { add("incremental_ticker.$instrument") }
-            }
-        }
-        send(Frame.Text(sub.toString()))
+        val request = SubscribeRequest(
+            params = SubscribeRequest.Params(
+                channels = listOf("incremental_ticker.$instrument")
+            )
+        )
+        val text = json.encodeToString(request)
+        send(Frame.Text(text))
 
-        for (frame in incoming) if (frame is Frame.Text) {
-            val root = json.parseToJsonElement(frame.readText()).jsonObject
-            if (!root.containsKey("params")) continue
-            val tick = json.decodeFromJsonElement<WSFrame>(root).params.data
-            val price = tick.last_price ?: continue
-            window.add(tick.timestamp, price)
-            window.slope()?.let { trendFlow.value = it }
+        incoming.consumeAsFlow().collect { frame ->
+            if (frame is Frame.Text) {
+                try {
+                    val root = json.parseToJsonElement(frame.readText()).jsonObject
+                    if (!root.containsKey("params")) return@collect
+                    val tick = json.decodeFromJsonElement<WSFrame>(root).params.data
+                    val price = tick.last_price ?: return@collect
+                    window.add(tick.timestamp, price)
+                    window.slope()?.let { trendFlow.value = it }
+                } catch (e: Exception) {
+                    logger.log(Level.SEVERE, "Failed to parse WebSocket message", e)
+                }
+            }
         }
     }
 }

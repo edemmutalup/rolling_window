@@ -24,6 +24,9 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
+    implementation("io.ktor:ktor-client-logging-jvm:2.3.7")
+
 
     implementation("org.slf4j:slf4j-simple:1.7.36")
 }
